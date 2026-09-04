@@ -512,8 +512,10 @@ function weightedPick(weights) {
   }
   return entries[entries.length - 1][0];
 }
+// 曲の出だしに使われやすいコードの重み(Iが最多だが、IV・vi・Vから始まる曲も多い)
+const PROGRESSION_START_WEIGHTS = { I: 5, vi: 3, IV: 3, V: 1 };
 function generateRandomProgression(length = 4) {
-  const romanSeq = ['I'];
+  const romanSeq = [weightedPick(PROGRESSION_START_WEIGHTS)];
   while (romanSeq.length < length) {
     const last = romanSeq[romanSeq.length - 1];
     romanSeq.push(weightedPick(PROGRESSION_TRANSITIONS[last]));
