@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>コードチューナー</title>
+<style>
+  :root {
+    --bg: #17181c;
+    --panel: #1f2127;
+    --panel-2: #26282f;
+    --border: #34363d;
+    --text: #f2f1ec;
+    --text-dim: #8b8d96;
+    --accent: #4e8bf0;
+    --green: #6fcf6f;
+    --yellow: #e0c341;
+    --red: #e0554a;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .app { width: 100%; max-width: 380px; }
+  h1 {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-align: center;
+    margin: 0 0 20px;
+    letter-spacing: 0.02em;
+  }
+  .section-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-tab {
+    flex: 1;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .section-tab.active {
+    border-color: var(--accent);
+    background: rgba(78,139,240,0.14);
+    color: var(--accent);
+  }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    font-size: 13px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .tab.active {
+    border-color: var(--accent);
+    background: rgba(78,139,240,0.14);
+    color: var(--accent);
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 20px 22px;
+    text-align: center;
+  }
+  .hint { font-size: 13px; color: var(--text-dim); margin: 0 0 8px; min-height: 16px; }
+  .note {
+    font-size: 56px;
+    font-weight: 500;
+    line-height: 1;
+    margin-bottom: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .meter-label { font-size: 11px; fill: var(--text-dim); }
+  .meter-track { stroke: var(--border); }
+  .meter-tick { stroke: var(--border); }
+  .meter-tick-center { stroke: var(--text-dim); }
+  #meter-dot { transition: cx 0.08s linear, fill 0.15s ease; }
+  .readout { font-size: 13px; color: var(--text-dim); margin-top: 10px; font-variant-numeric: tabular-nums; }
+
+  .guided-toggle { display: flex; gap: 6px; margin-top: 16px; }
+  .guided-toggle button {
+    flex: 1;
+    padding: 8px;
+    font-size: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .guided-toggle button.active {
+    border-color: var(--accent);
+    background: rgba(78,139,240,0.14);
+    color: var(--accent);
+  }
+
+  .strings { display: grid; gap: 6px; margin-top: 10px; }
+  .string-btn {
+    padding: 12px 0;
+    font-size: 13px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+  .string-btn.active {
+    border-color: var(--accent);
+    background: rgba(78,139,240,0.14);
+    color: var(--accent);
+  }
+  .string-btn.target {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(78,139,240,0.25);
+    color: var(--accent);
+  }
+  .string-btn.completed {
+    border-color: var(--green);
+    background: rgba(111,207,111,0.12);
+    color: var(--green);
+  }
+  .string-btn.future { opacity: 0.45; cursor: default; }
+  .string-btn[disabled] { cursor: default; }
+
+  .free-note { font-size: 13px; color: var(--text-dim); text-align: center; padding: 12px 0 4px; }
+  .start-btn {
+    display: block;
+    width: 100%;
+    margin-top: 18px;
+    padding: 13px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .start-btn.listening { border-color: var(--red); color: var(--red); }
+  .restart-btn {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 11px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: 1px solid var(--green);
+    background: rgba(111,207,111,0.1);
+    color: var(--green);
+    cursor: pointer;
+  }
+  .status { text-align: center; font-size: 12px; color: var(--text-dim); margin-top: 10px; min-height: 16px; }
+
+  /* --- コード分析パネル --- */
+  .chord-name {
+    font-size: 52px;
+    font-weight: 500;
+    line-height: 1;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+    min-height: 62px;
+  }
+  .chord-confidence { font-size: 12px; color: var(--text-dim); margin-bottom: 18px; min-height: 16px; }
+  .chroma-bars {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 4px;
+    height: 90px;
+    margin-bottom: 4px;
+  }
+  .chroma-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .chroma-bar {
+    width: 100%;
+    background: var(--border);
+    border-radius: 3px 3px 0 0;
+    transition: height 0.1s ease, background 0.1s ease;
+    min-height: 2px;
+  }
+  .chroma-bar.chord-tone { background: var(--accent); }
+  .chroma-label { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
+  .candidates { display: flex; justify-content: center; gap: 10px; margin-top: 14px; }
+  .candidate { font-size: 12px; color: var(--text-dim); }
+  .candidate b { color: var(--text); font-weight: 500; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <h1>コードチューナー(プロトタイプ)</h1>
+
+  <div class="section-tabs" id="section-tabs"></div>
+
+  <!-- ===== チューナーセクション ===== -->
+  <div id="section-tuner">
+    <div class="tabs" id="tabs"></div>
+
+    <div class="panel">
+      <p class="hint" id="hint">開始ボタンを押してマイクを許可してください</p>
+      <div class="note" id="note-display">&mdash;</div>
+
+      <svg viewBox="0 0 300 90" role="img" aria-label="チューニングメーター">
+        <line x1="20" y1="45" x2="280" y2="45" class="meter-track" stroke-width="1"/>
+        <line x1="150" y1="18" x2="150" y2="72" class="meter-tick-center" stroke-width="1"/>
+        <line x1="75" y1="30" x2="75" y2="60" class="meter-tick" stroke-width="1"/>
+        <line x1="225" y1="30" x2="225" y2="60" class="meter-tick" stroke-width="1"/>
+        <circle id="meter-dot" cx="150" cy="45" r="8" fill="#8b8d96"/>
+        <text x="20" y="86" class="meter-label">&#9837;</text>
+        <text x="150" y="86" class="meter-label" text-anchor="middle">0</text>
+        <text x="280" y="86" class="meter-label" text-anchor="end">&#9839;</text>
+      </svg>
+
+      <p class="readout" id="readout">&nbsp;</p>
+
+      <div class="guided-toggle" id="guided-toggle"></div>
+    </div>
+
+    <div class="strings" id="strings"></div>
+    <button class="restart-btn hidden" id="guided-restart-btn">もう一度最初から</button>
+  </div>
+
+  <!-- ===== コード分析セクション ===== -->
+  <div id="section-chord" class="hidden">
+    <div class="panel">
+      <p class="hint" id="chord-hint">開始ボタンを押してコードを鳴らしてください</p>
+      <div class="chord-name" id="chord-display">&mdash;</div>
+      <p class="chord-confidence" id="chord-confidence">&nbsp;</p>
+
+      <div class="chroma-bars" id="chroma-bars"></div>
+
+      <div class="candidates" id="candidates"></div>
+    </div>
+  </div>
+
+  <button class="start-btn" id="start-btn">マイクを開始</button>
+  <p class="status" id="status">&nbsp;</p>
+</div>
+
+<script>
+// ================= モード定義(チューナー用、低音弦から順) =================
+const MODES = {
+  guitar: {
+    label: 'ギター',
+    strings: [
+      { name: 'E2', freq: 82.41 }, { name: 'A2', freq: 110.00 }, { name: 'D3', freq: 146.83 },
+      { name: 'G3', freq: 196.00 }, { name: 'B3', freq: 246.94 }, { name: 'E4', freq: 329.63 },
+    ],
+    range: { min: 70, max: 400 }
+  },
+  bass: {
+    label: 'ベース',
+    strings: [
+      { name: 'E1', freq: 41.20 }, { name: 'A1', freq: 55.00 }, { name: 'D2', freq: 73.42 }, { name: 'G2', freq: 98.00 },
+    ],
+    range: { min: 35, max: 250 }
+  },
+  free: { label: '自由', strings: null, range: { min: 60, max: 1000 } }
+};
+
+const NOTE_NAMES = ['C','C\u266f','D','D\u266f','E','F','F\u266f','G','G\u266f','A','A\u266f','B'];
+const A4 = 440;
+
+// ================= コードテンプレート定義 =================
+const CHORD_QUALITIES = [
+  { suffix: '', intervals: [0, 4, 7] },
+  { suffix: 'm', intervals: [0, 3, 7] },
+];
+const CHORD_TEMPLATES = [];
+NOTE_NAMES.forEach((rootName, root) => {
+  CHORD_QUALITIES.forEach(q => {
+    const vec = new Array(12).fill(0);
+    q.intervals.forEach(iv => { vec[(root + iv) % 12] = 1; });
+    CHORD_TEMPLATES.push({ name: rootName + q.suffix, vec, tones: q.intervals.map(iv => (root + iv) % 12) });
+  });
+});
+
+// ================= 全体状態 =================
+let currentSection = 'tuner';
+let currentModeKey = 'guitar';
+let selectedString = MODES.guitar.strings[0].name;
+let audioCtx = null;
+let analyser = null;
+let mediaStream = null;
+let listening = false;
+let rafId = null;
+let lastUpdate = 0;
+const UPDATE_INTERVAL_MS = 100;
+const freqHistory = [];
+const HISTORY_SIZE = 5;
+const chromaHistory = [];
+const CHROMA_HISTORY_SIZE = 4;
+
+// --- コード分析用の適応ノイズフロア(機器/環境ごとの無音レベルの違いを吸収) ---
+let chordNoiseFloor = 0.004;
+const NOISE_FLOOR_ADAPT_RATE = 0.05;
+const CHORD_SIGNAL_MARGIN = 2.5; // ノイズフロアの何倍を超えたら「音あり」と判定するか
+
+// --- 順番チューニングモード用の状態 ---
+let guidedMode = false;
+let guidedIndex = 0;
+let guidedCompleted = [];
+let stableStreak = 0;
+let advancing = false;
+const STABLE_FRAMES_REQUIRED = 8;   // 100ms間隔 x 8 = 約0.8秒
+const GUIDED_CENTS_TOLERANCE = 5;
+
+// ================= DOM =================
+const sectionTabsEl = document.getElementById('section-tabs');
+const sectionTunerEl = document.getElementById('section-tuner');
+const sectionChordEl = document.getElementById('section-chord');
+const tabsEl = document.getElementById('tabs');
+const stringsEl = document.getElementById('strings');
+const noteDisplay = document.getElementById('note-display');
+const readout = document.getElementById('readout');
+const hint = document.getElementById('hint');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('start-btn');
+const meterDot = document.getElementById('meter-dot');
+const guidedToggleEl = document.getElementById('guided-toggle');
+const guidedRestartBtn = document.getElementById('guided-restart-btn');
+const chordHint = document.getElementById('chord-hint');
+const chordDisplay = document.getElementById('chord-display');
+const chordConfidence = document.getElementById('chord-confidence');
+const chromaBarsEl = document.getElementById('chroma-bars');
+const candidatesEl = document.getElementById('candidates');
+
+// ================= セクション切替UI =================
+function buildSectionTabs() {
+  sectionTabsEl.innerHTML = '';
+  [['tuner', 'チューナー'], ['chord', 'コード分析']].forEach(([key, label]) => {
+    const btn = document.createElement('button');
+    btn.className = 'section-tab' + (key === currentSection ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => switchSection(key);
+    sectionTabsEl.appendChild(btn);
+  });
+}
+function switchSection(key) {
+  currentSection = key;
+  buildSectionTabs();
+  sectionTunerEl.classList.toggle('hidden', key !== 'tuner');
+  sectionChordEl.classList.toggle('hidden', key !== 'chord');
+}
+
+// ================= チューナーUI =================
+function buildTabs() {
+  tabsEl.innerHTML = '';
+  Object.keys(MODES).forEach(key => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (key === currentModeKey ? ' active' : '');
+    btn.textContent = MODES[key].label;
+    btn.onclick = () => switchMode(key);
+    tabsEl.appendChild(btn);
+  });
+}
+
+function buildGuidedToggle() {
+  const mode = MODES[currentModeKey];
+  if (!mode.strings) {
+    guidedToggleEl.innerHTML = '';
+    guidedToggleEl.classList.add('hidden');
+    return;
+  }
+  guidedToggleEl.classList.remove('hidden');
+  guidedToggleEl.innerHTML = '';
+  [[false, '手動選択'], [true, '順番モード']].forEach(([val, label]) => {
+    const btn = document.createElement('button');
+    btn.className = (guidedMode === val) ? 'active' : '';
+    btn.textContent = label;
+    btn.onclick = () => setGuidedMode(val);
+    guidedToggleEl.appendChild(btn);
+  });
+}
+
+function setGuidedMode(on) {
+  guidedMode = on;
+  guidedIndex = 0;
+  guidedCompleted = [];
+  stableStreak = 0;
+  advancing = false;
+  freqHistory.length = 0;
+  const mode = MODES[currentModeKey];
+  guidedRestartBtn.classList.add('hidden');
+  if (mode.strings) {
+    if (guidedMode) {
+      selectedString = mode.strings[0].name;
+      const label = mode.strings[0].name.replace(/[0-9]/g, '');
+      hint.textContent = `(1/${mode.strings.length}) \u4e00\u756a\u4f4e\u3044\u5f26\u3000${label}\u3000\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044`;
+    } else {
+      hint.textContent = listening ? '\u97f3\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044' : '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30de\u30a4\u30af\u3092\u8a31\u53ef\u3057\u3066\u304f\u3060\u3055\u3044';
+    }
+  }
+  noteDisplay.textContent = '\u2014';
+  readout.textContent = '\u00a0';
+  setMeter(0, 'neutral');
+  buildGuidedToggle();
+  buildStrings();
+}
+
+function buildStrings() {
+  const mode = MODES[currentModeKey];
+  stringsEl.innerHTML = '';
+  if (!mode.strings) {
+    const p = document.createElement('p');
+    p.className = 'free-note';
+    p.textContent = '弦の指定なし。鳴らした音がそのまま表示されます';
+    stringsEl.appendChild(p);
+    stringsEl.style.gridTemplateColumns = '1fr';
+    return;
+  }
+  stringsEl.style.gridTemplateColumns = `repeat(${mode.strings.length}, 1fr)`;
+  mode.strings.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = s.name.replace(/[0-9]/g, '') + (guidedMode && guidedCompleted.includes(i) ? ' \u2713' : '');
+
+    if (guidedMode) {
+      btn.disabled = true;
+      if (guidedCompleted.includes(i)) btn.className = 'string-btn completed';
+      else if (i === guidedIndex) btn.className = 'string-btn target';
+      else btn.className = 'string-btn future';
+    } else {
+      btn.className = 'string-btn' + (s.name === selectedString ? ' active' : '');
+      btn.onclick = () => { selectedString = s.name; buildStrings(); };
+    }
+    stringsEl.appendChild(btn);
+  });
+}
+
+function switchMode(key) {
+  currentModeKey = key;
+  const mode = MODES[key];
+  selectedString = mode.strings ? mode.strings[0].name : null;
+  freqHistory.length = 0;
+  guidedIndex = 0;
+  guidedCompleted = [];
+  stableStreak = 0;
+  advancing = false;
+  guidedRestartBtn.classList.add('hidden');
+  if (!mode.strings) guidedMode = false; // 自由モードには順番チューニングなし
+  buildTabs();
+  buildGuidedToggle();
+  buildStrings();
+  noteDisplay.textContent = '\u2014';
+  readout.textContent = '\u00a0';
+  if (guidedMode && mode.strings) {
+    const label = mode.strings[0].name.replace(/[0-9]/g, '');
+    hint.textContent = `(1/${mode.strings.length}) \u4e00\u756a\u4f4e\u3044\u5f26\u3000${label}\u3000\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044`;
+  } else {
+    hint.textContent = listening ? '\u97f3\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044' : '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30de\u30a4\u30af\u3092\u8a31\u53ef\u3057\u3066\u304f\u3060\u3055\u3044';
+  }
+  setMeter(0, 'neutral');
+}
+
+function handleGuidedSuccess(target) {
+  advancing = true;
+  guidedCompleted.push(guidedIndex);
+  hint.textContent = `\u2713 OK\uff01 (${target.name.replace(/[0-9]/g, '')})`;
+  setMeter(0, 'green');
+  buildStrings();
+  setTimeout(() => {
+    guidedIndex++;
+    stableStreak = 0;
+    advancing = false;
+    freqHistory.length = 0;
+    const mode = MODES[currentModeKey];
+    if (guidedIndex >= mode.strings.length) {
+      showGuidedComplete();
+    } else {
+      selectedString = mode.strings[guidedIndex].name;
+      const label = selectedString.replace(/[0-9]/g, '');
+      hint.textContent = `(${guidedIndex + 1}/${mode.strings.length}) \u6b21\u306f\u3000${label}\u3000\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044`;
+      noteDisplay.textContent = '\u2014';
+      readout.textContent = '\u00a0';
+      buildStrings();
+    }
+  }, 700);
+}
+
+function showGuidedComplete() {
+  hint.textContent = '\ud83c\udf89 \u5168\u5f26\u30c1\u30e5\u30fc\u30cb\u30f3\u30b0\u5b8c\u4e86\uff01';
+  noteDisplay.textContent = '\u2713';
+  readout.textContent = `${MODES[currentModeKey].strings.length}\u5f26\u3059\u3079\u3066\u8abf\u6574\u6e08\u307f\u3067\u3059`;
+  setMeter(0, 'green');
+  buildStrings();
+  guidedRestartBtn.classList.remove('hidden');
+}
+
+guidedRestartBtn.onclick = () => setGuidedMode(true);
+
+// ================= コード分析UI =================
+function buildChromaBars() {
+  chromaBarsEl.innerHTML = '';
+  NOTE_NAMES.forEach((name, i) => {
+    const col = document.createElement('div');
+    col.className = 'chroma-col';
+    const bar = document.createElement('div');
+    bar.className = 'chroma-bar';
+    bar.id = 'chroma-bar-' + i;
+    bar.style.height = '2px';
+    const label = document.createElement('div');
+    label.className = 'chroma-label';
+    label.textContent = name;
+    col.appendChild(bar);
+    col.appendChild(label);
+    chromaBarsEl.appendChild(col);
+  });
+}
+
+// ================= マイク制御 =================
+async function startListening() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    statusEl.textContent = '\u30de\u30a4\u30af\u3078\u306e\u30a2\u30af\u30bb\u30b9\u304c\u62d2\u5426\u3055\u308c\u307e\u3057\u305f';
+    return;
+  }
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(mediaStream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 8192;
+  analyser.smoothingTimeConstant = 0.6;
+  source.connect(analyser);
+
+  listening = true;
+  startBtn.textContent = '\u505c\u6b62';
+  startBtn.classList.add('listening');
+  if (!guidedMode) hint.textContent = '\u97f3\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
+  chordHint.textContent = '\u30b3\u30fc\u30c9\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
+  statusEl.textContent = '';
+  loop();
+}
+function stopListening() {
+  listening = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  audioCtx = null; analyser = null; mediaStream = null;
+  startBtn.textContent = '\u30de\u30a4\u30af\u3092\u958b\u59cb';
+  startBtn.classList.remove('listening');
+  if (!guidedMode) hint.textContent = '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30de\u30a4\u30af\u3092\u8a31\u53ef\u3057\u3066\u304f\u3060\u3055\u3044';
+  chordHint.textContent = '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30b3\u30fc\u30c9\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
+  noteDisplay.textContent = '\u2014'; readout.textContent = '\u00a0';
+  chordDisplay.textContent = '\u2014'; chordConfidence.textContent = '\u00a0';
+  candidatesEl.innerHTML = '';
+  freqHistory.length = 0; chromaHistory.length = 0;
+  stableStreak = 0; advancing = false;
+  chordNoiseFloor = 0.004;
+  setMeter(0, 'neutral');
+  buildChromaBars();
+}
+
+// ================= チューナー: 信号処理 =================
+function getRMS(buffer) {
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i++) sum += buffer[i] * buffer[i];
+  return Math.sqrt(sum / buffer.length);
+}
+function autocorrelate(buffer, sampleRate, range) {
+  const SIZE = buffer.length;
+  const minLag = Math.floor(sampleRate / range.max);
+  const maxLag = Math.floor(sampleRate / range.min);
+  let bestLag = -1, bestCorrelation = 0;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let correlation = 0;
+    for (let i = 0; i < SIZE - lag; i++) correlation += buffer[i] * buffer[i + lag];
+    correlation = correlation / (SIZE - lag);
+    if (correlation > bestCorrelation) { bestCorrelation = correlation; bestLag = lag; }
+  }
+  if (bestLag === -1) return null;
+  return sampleRate / bestLag;
+}
+function stabilize(freq) {
+  freqHistory.push(freq);
+  if (freqHistory.length > HISTORY_SIZE) freqHistory.shift();
+  const sorted = [...freqHistory].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+function frequencyToNote(freq) {
+  const noteNum = 12 * Math.log2(freq / A4) + 69;
+  const rounded = Math.round(noteNum);
+  const cents = Math.round((noteNum - rounded) * 100);
+  const name = NOTE_NAMES[((rounded % 12) + 12) % 12];
+  const octave = Math.floor(rounded / 12) - 1;
+  return { name, octave, cents };
+}
+function nearestStringFreq(freq, mode) {
+  if (!mode.strings) return null;
+  let best = mode.strings[0], bestDiff = Infinity;
+  mode.strings.forEach(s => {
+    const diff = Math.abs(Math.log2(freq / s.freq));
+    if (diff < bestDiff) { bestDiff = diff; best = s; }
+  });
+  return best;
+}
+function centsFromReference(freq, refFreq) { return Math.round(1200 * Math.log2(freq / refFreq)); }
+function setMeter(cents, state) {
+  const clamped = Math.max(-50, Math.min(50, cents));
+  const x = 150 + (clamped / 50) * 130;
+  meterDot.setAttribute('cx', x);
+  const colors = { neutral: '#8b8d96', green: '#6fcf6f', yellow: '#e0c341', red: '#e0554a' };
+  meterDot.setAttribute('fill', colors[state] || colors.neutral);
+}
+function centsToState(cents) {
+  const abs = Math.abs(cents);
+  if (abs <= 5) return 'green';
+  if (abs <= 20) return 'yellow';
+  return 'red';
+}
+
+// ================= コード分析: 信号処理 =================
+// 機器(マイク)ごとの感度・周波数特性の差を吸収するためのパラメータ
+const RELATIVE_PEAK_THRESHOLD_DB = 40; // そのフレームの最大ピークから何dB以内を「有効なピーク」とみなすか(絶対dBではなく相対値)
+const OCTAVE_FOLD_WEIGHT = 0.5;        // ピーク周波数の1オクターブ下(2倍音仮説)に加える重み
+
+// スペクトルから局所ピークを検出し、放物線補間で周波数を精密化する
+function findSpectralPeaks(freqDataDb, sampleRate, fftSize) {
+  const minFreq = 60, maxFreq = 2000;
+  const binHz = sampleRate / fftSize;
+  const minBin = Math.max(1, Math.floor(minFreq / binHz));
+  const maxBin = Math.min(freqDataDb.length - 2, Math.ceil(maxFreq / binHz));
+
+  let maxDb = -Infinity;
+  for (let k = minBin; k <= maxBin; k++) {
+    if (freqDataDb[k] > maxDb) maxDb = freqDataDb[k];
+  }
+  const threshold = maxDb - RELATIVE_PEAK_THRESHOLD_DB;
+
+  const peaks = [];
+  for (let k = minBin + 1; k < maxBin; k++) {
+    const y0 = freqDataDb[k - 1], y1 = freqDataDb[k], y2 = freqDataDb[k + 1];
+    if (y1 <= y0 || y1 <= y2 || y1 <= threshold) continue;
+    // 放物線補間: 3点(y0,y1,y2)から真のピーク位置をサブビン精度で推定
+    const denom = (y0 - 2 * y1 + y2);
+    const offset = denom !== 0 ? 0.5 * (y0 - y2) / denom : 0;
+    const refinedBin = k + Math.max(-0.5, Math.min(0.5, offset));
+    peaks.push({ freq: refinedBin * binHz, db: y1 });
+  }
+  return { peaks, maxDb };
+}
+
+function computeChroma(freqDataDb, sampleRate, fftSize) {
+  const chroma = new Array(12).fill(0);
+  const { peaks, maxDb } = findSpectralPeaks(freqDataDb, sampleRate, fftSize);
+  if (peaks.length === 0) return chroma;
+
+  peaks.forEach(peak => {
+    // 最大ピークからの相対dBを0〜1の重みに変換。機器ごとの絶対音量差に左右されない。
+    const weight = Math.max(0, 1 - (maxDb - peak.db) / RELATIVE_PEAK_THRESHOLD_DB);
+
+    // 通常のピッチクラスへ加算(このピーク自体が基音、または和音を構成する倍音の場合はここが本来の音)
+    const pitchClass = (((Math.round(12 * Math.log2(peak.freq / A4)) + 69) % 12) + 12) % 12;
+    chroma[pitchClass] += weight;
+
+    // オクターブ折り返し補完: 内蔵マイクなどは低音域が減衰しやすく、基音が弱く2倍音だけ
+    // 強く録れることがある。「このピークは1オクターブ下の音の2倍音かもしれない」という
+    // 仮説で弱めの重みを加え、機種差による基音の欠落を緩和する。
+    const subFreq = peak.freq / 2;
+    if (subFreq >= 25) {
+      const subPitchClass = (((Math.round(12 * Math.log2(subFreq / A4)) + 69) % 12) + 12) % 12;
+      chroma[subPitchClass] += weight * OCTAVE_FOLD_WEIGHT;
+    }
+  });
+
+  const max = Math.max(...chroma, 1e-9);
+  return chroma.map(v => v / max);
+}
+function stabilizeChroma(chroma) {
+  chromaHistory.push(chroma);
+  if (chromaHistory.length > CHROMA_HISTORY_SIZE) chromaHistory.shift();
+  const avg = new Array(12).fill(0);
+  chromaHistory.forEach(c => c.forEach((v, i) => { avg[i] += v; }));
+  return avg.map(v => v / chromaHistory.length);
+}
+function matchChord(chroma) {
+  const chromaNorm = Math.sqrt(chroma.reduce((s, v) => s + v * v, 0));
+  if (chromaNorm < 1e-6) return [];
+  const scores = CHORD_TEMPLATES.map(t => {
+    const dot = t.vec.reduce((s, v, i) => s + v * chroma[i], 0);
+    const templateNorm = Math.sqrt(3);
+    return { name: t.name, tones: t.tones, score: dot / (chromaNorm * templateNorm) };
+  });
+  scores.sort((a, b) => b.score - a.score);
+  return scores;
+}
+function renderChroma(chroma, chordTones) {
+  chroma.forEach((v, i) => {
+    const bar = document.getElementById('chroma-bar-' + i);
+    if (!bar) return;
+    bar.style.height = Math.max(2, v * 90) + 'px';
+    bar.classList.toggle('chord-tone', chordTones && chordTones.includes(i));
+  });
+}
+
+// ================= メインループ =================
+function loop(timestamp) {
+  if (!listening) return;
+  rafId = requestAnimationFrame(loop);
+  if (timestamp - lastUpdate < UPDATE_INTERVAL_MS) return;
+  lastUpdate = timestamp;
+
+  const timeBuffer = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(timeBuffer);
+  const rms = getRMS(timeBuffer);
+
+  if (currentSection === 'tuner') {
+    const mode = MODES[currentModeKey];
+
+    if (guidedMode && mode.strings && guidedIndex >= mode.strings.length) return; // 完了後は何もしない
+    if (advancing) return; // OK演出中は一時停止
+
+    if (rms < 0.01) {
+      noteDisplay.textContent = '\u2014'; readout.textContent = '\u00a0'; setMeter(0, 'neutral');
+      if (guidedMode) stableStreak = 0;
+      return;
+    }
+    const rawFreq = autocorrelate(timeBuffer, audioCtx.sampleRate, mode.range);
+    if (!rawFreq) return;
+    const freq = stabilize(rawFreq);
+
+    if (mode.strings) {
+      const target = guidedMode
+        ? mode.strings[guidedIndex]
+        : (selectedString ? mode.strings.find(s => s.name === selectedString) : nearestStringFreq(freq, mode));
+      const cents = centsFromReference(freq, target.freq);
+      noteDisplay.textContent = target.name.replace(/[0-9]/g, '');
+      readout.textContent = `${freq.toFixed(1)} Hz \u00b7 ${cents >= 0 ? '+' : ''}${cents} cents`;
+      setMeter(cents, centsToState(cents));
+
+      if (guidedMode) {
+        if (Math.abs(cents) <= GUIDED_CENTS_TOLERANCE) stableStreak++;
+        else stableStreak = 0;
+        if (stableStreak >= STABLE_FRAMES_REQUIRED) handleGuidedSuccess(target);
+      }
+    } else {
+      const { name, octave, cents } = frequencyToNote(freq);
+      noteDisplay.textContent = name;
+      readout.textContent = `${freq.toFixed(1)} Hz \u00b7 ${name}${octave} \u00b7 ${cents >= 0 ? '+' : ''}${cents} cents`;
+      setMeter(cents, centsToState(cents));
+    }
+  } else if (currentSection === 'chord') {
+    if (rms < chordNoiseFloor * CHORD_SIGNAL_MARGIN) {
+      // 無音とみなし、環境ノイズレベルをゆっくり学習しておく(次回の判定をその環境に合わせる)
+      chordNoiseFloor = chordNoiseFloor * (1 - NOISE_FLOOR_ADAPT_RATE) + rms * NOISE_FLOOR_ADAPT_RATE;
+      renderChroma(new Array(12).fill(0), []);
+      return;
+    }
+    const freqDataDb = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(freqDataDb);
+    const rawChroma = computeChroma(freqDataDb, audioCtx.sampleRate, analyser.fftSize);
+    const chroma = stabilizeChroma(rawChroma);
+    const matches = matchChord(chroma);
+    const best = matches[0];
+
+    if (best && best.score > 0.55) {
+      chordDisplay.textContent = best.name;
+      chordConfidence.textContent = `\u4e00\u81f4\u5ea6 ${Math.round(best.score * 100)}%`;
+      renderChroma(chroma, best.tones);
+      const second = matches[1];
+      candidatesEl.innerHTML = second
+        ? `<div class="candidate">\u6b21\u5019\u88dc: <b>${second.name}</b> (${Math.round(second.score * 100)}%)</div>`
+        : '';
+    } else {
+      chordDisplay.textContent = '\u2014';
+      chordConfidence.textContent = best ? `\u691c\u51fa\u4e2d... (\u6700\u5927 ${Math.round(best.score * 100)}%)` : '\u00a0';
+      renderChroma(chroma, []);
+      candidatesEl.innerHTML = '';
+    }
+  }
+}
+
+startBtn.onclick = () => { if (listening) stopListening(); else startListening(); };
+
+buildSectionTabs();
+buildTabs();
+buildGuidedToggle();
+buildStrings();
+buildChromaBars();
+</script>
+
+</body>
+</html>
