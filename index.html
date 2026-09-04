@@ -41,11 +41,13 @@
   }
   .section-tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
   }
+  .section-tab { min-width: 70px; }
   .section-tab {
     flex: 1;
     padding: 10px;
@@ -64,6 +66,7 @@
   }
   .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
   .quality-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
+  .progression-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 16px; }
   .tab {
     flex: 1;
     padding: 10px;
@@ -286,6 +289,18 @@
     <div class="strings" id="chart-roots"></div>
   </div>
 
+  <!-- ===== コード進行セクション ===== -->
+  <div id="section-progression" class="hidden">
+    <div class="progression-grid" id="progression-select"></div>
+    <div class="panel">
+      <p class="hint" id="progression-hint">開始ボタンを押してマイクを許可してください</p>
+      <div class="chord-chart-name" id="progression-chord-name">C</div>
+      <div class="chord-diagram" id="progression-diagram"></div>
+    </div>
+    <div class="strings" id="progression-steps"></div>
+    <button class="restart-btn hidden" id="progression-restart-btn">もう一度最初から</button>
+  </div>
+
   <button class="start-btn" id="start-btn">マイクを開始</button>
   <p class="status" id="status">&nbsp;</p>
 </div>
@@ -427,6 +442,35 @@ let currentSection = 'tuner';
 let chartRoot = 0;
 let chartQuality = 'major';
 let chartVoicingIndex = 0;
+let progressionSetIndex = 0;
+let progressionStepIndex = 0;
+let progressionCompletedSteps = [];
+let progressionStableStreak = 0;
+let progressionAdvancing = false;
+const PROGRESSION_STABLE_FRAMES_REQUIRED = 6; // 100ms間隔 x 6 = 約0.6秒
+const PROGRESSION_SCORE_THRESHOLD = 0.55;
+
+// ================= コード進行の定番パターン(すべてCメジャーキー) =================
+const PROGRESSIONS = [
+  { name: '王道進行', chords: [
+    { root: 5, quality: 'major' }, { root: 7, quality: 'major' },
+    { root: 4, quality: 'minor' }, { root: 9, quality: 'minor' },
+  ]},
+  { name: 'Axis進行', chords: [
+    { root: 0, quality: 'major' }, { root: 7, quality: 'major' },
+    { root: 9, quality: 'minor' }, { root: 5, quality: 'major' },
+  ]},
+  { name: 'スリーコード', chords: [
+    { root: 0, quality: 'major' }, { root: 5, quality: 'major' },
+    { root: 7, quality: 'major' }, { root: 0, quality: 'major' },
+  ]},
+  { name: 'カノン進行', chords: [
+    { root: 0, quality: 'major' }, { root: 7, quality: 'major' },
+    { root: 9, quality: 'minor' }, { root: 4, quality: 'minor' },
+    { root: 5, quality: 'major' }, { root: 0, quality: 'major' },
+    { root: 5, quality: 'major' }, { root: 7, quality: 'major' },
+  ]},
+];
 let currentModeKey = 'guitar';
 let selectedString = MODES.guitar.strings[0].name;
 let audioCtx = null;
@@ -465,6 +509,13 @@ const chartRootsEl = document.getElementById('chart-roots');
 const chartChordNameEl = document.getElementById('chart-chord-name');
 const chordDiagramEl = document.getElementById('chord-diagram');
 const chartVoicingTabsEl = document.getElementById('chart-voicing-tabs');
+const sectionProgressionEl = document.getElementById('section-progression');
+const progressionSelectEl = document.getElementById('progression-select');
+const progressionHintEl = document.getElementById('progression-hint');
+const progressionChordNameEl = document.getElementById('progression-chord-name');
+const progressionDiagramEl = document.getElementById('progression-diagram');
+const progressionStepsEl = document.getElementById('progression-steps');
+const progressionRestartBtn = document.getElementById('progression-restart-btn');
 const tabsEl = document.getElementById('tabs');
 const stringsEl = document.getElementById('strings');
 const noteDisplay = document.getElementById('note-display');
@@ -484,7 +535,7 @@ const candidatesEl = document.getElementById('candidates');
 // ================= セクション切替UI =================
 function buildSectionTabs() {
   sectionTabsEl.innerHTML = '';
-  [['tuner', 'チューナー'], ['chord', 'コード分析'], ['chart', 'コード表']].forEach(([key, label]) => {
+  [['tuner', 'チューナー'], ['chord', 'コード分析'], ['chart', 'コード表'], ['progression', 'コード進行']].forEach(([key, label]) => {
     const btn = document.createElement('button');
     btn.className = 'section-tab' + (key === currentSection ? ' active' : '');
     btn.textContent = label;
@@ -498,6 +549,7 @@ function switchSection(key) {
   sectionTunerEl.classList.toggle('hidden', key !== 'tuner');
   sectionChordEl.classList.toggle('hidden', key !== 'chord');
   sectionChartEl.classList.toggle('hidden', key !== 'chart');
+  sectionProgressionEl.classList.toggle('hidden', key !== 'progression');
   startBtn.classList.toggle('hidden', key === 'chart');
   statusEl.classList.toggle('hidden', key === 'chart');
 }
@@ -782,6 +834,84 @@ function renderChordChart() {
   buildChartVoicingTabs(voicings);
 }
 
+// ================= コード進行UI =================
+function currentProgression() { return PROGRESSIONS[progressionSetIndex]; }
+function buildProgressionSelect() {
+  progressionSelectEl.innerHTML = '';
+  PROGRESSIONS.forEach((p, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === progressionSetIndex ? ' active' : '');
+    btn.textContent = p.name;
+    btn.onclick = () => { progressionSetIndex = i; resetProgression(); };
+    progressionSelectEl.appendChild(btn);
+  });
+}
+function progressionChordName(step) { return NOTE_NAMES[step.root] + QUALITY_DEFS[step.quality].suffix; }
+function buildProgressionSteps() {
+  const prog = currentProgression();
+  progressionStepsEl.innerHTML = '';
+  progressionStepsEl.style.gridTemplateColumns = `repeat(${Math.min(prog.chords.length, 4)}, 1fr)`;
+  prog.chords.forEach((c, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = progressionChordName(c);
+    btn.disabled = true;
+    if (progressionCompletedSteps.includes(i)) btn.className = 'string-btn completed';
+    else if (i === progressionStepIndex) btn.className = 'string-btn target';
+    else btn.className = 'string-btn future';
+    progressionStepsEl.appendChild(btn);
+  });
+}
+function renderProgressionChord() {
+  const prog = currentProgression();
+  const step = prog.chords[progressionStepIndex];
+  if (!step) return;
+  progressionChordNameEl.textContent = progressionChordName(step);
+  const voicing = getChordVoicings(step.root, step.quality)[0];
+  progressionDiagramEl.innerHTML = buildChordDiagramSVG(voicing.frets, voicing.fingers) + buildFingerLegend(voicing.fingers);
+}
+function resetProgression() {
+  progressionStepIndex = 0;
+  progressionCompletedSteps = [];
+  progressionStableStreak = 0;
+  progressionAdvancing = false;
+  chromaHistory.length = 0;
+  progressionRestartBtn.classList.add('hidden');
+  buildProgressionSelect();
+  buildProgressionSteps();
+  renderProgressionChord();
+  progressionHintEl.textContent = listening
+    ? 'このコードを鳴らしてください'
+    : '開始ボタンを押してマイクを許可してください';
+}
+function handleProgressionSuccess() {
+  progressionAdvancing = true;
+  progressionCompletedSteps.push(progressionStepIndex);
+  progressionHintEl.textContent = '✓ OK！';
+  buildProgressionSteps();
+  setTimeout(() => {
+    progressionStepIndex++;
+    progressionStableStreak = 0;
+    progressionAdvancing = false;
+    chromaHistory.length = 0;
+    const prog = currentProgression();
+    if (progressionStepIndex >= prog.chords.length) {
+      showProgressionComplete();
+    } else {
+      renderProgressionChord();
+      buildProgressionSteps();
+      progressionHintEl.textContent = 'このコードを鳴らしてください';
+    }
+  }, 700);
+}
+function showProgressionComplete() {
+  progressionHintEl.textContent = '🎉 コード進行完了！';
+  progressionChordNameEl.textContent = '✓';
+  progressionDiagramEl.innerHTML = '';
+  buildProgressionSteps();
+  progressionRestartBtn.classList.remove('hidden');
+}
+progressionRestartBtn.onclick = () => resetProgression();
+
 // ================= マイク制御 =================
 async function startListening() {
   try {
@@ -802,6 +932,7 @@ async function startListening() {
   startBtn.classList.add('listening');
   if (!guidedMode) hint.textContent = '\u97f3\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
   chordHint.textContent = '\u30b3\u30fc\u30c9\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
+  progressionHintEl.textContent = '\u3053\u306e\u30b3\u30fc\u30c9\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
   statusEl.textContent = '';
   loop();
 }
@@ -815,11 +946,13 @@ function stopListening() {
   startBtn.classList.remove('listening');
   if (!guidedMode) hint.textContent = '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30de\u30a4\u30af\u3092\u8a31\u53ef\u3057\u3066\u304f\u3060\u3055\u3044';
   chordHint.textContent = '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30b3\u30fc\u30c9\u3092\u9cf4\u3089\u3057\u3066\u304f\u3060\u3055\u3044';
+  progressionHintEl.textContent = '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30de\u30a4\u30af\u3092\u8a31\u53ef\u3057\u3066\u304f\u3060\u3055\u3044';
   noteDisplay.textContent = '\u2014'; readout.textContent = '\u00a0';
   chordDisplay.textContent = '\u2014'; chordConfidence.textContent = '\u00a0';
   candidatesEl.innerHTML = '';
   freqHistory.length = 0; chromaHistory.length = 0;
   stableStreak = 0; advancing = false;
+  progressionStableStreak = 0; progressionAdvancing = false;
   chordNoiseFloor = 0.004;
   setMeter(0, 'neutral');
   buildChromaBars();
@@ -1041,6 +1174,35 @@ function loop(timestamp) {
       renderChroma(chroma, []);
       candidatesEl.innerHTML = '';
     }
+  } else if (currentSection === 'progression') {
+    const prog = currentProgression();
+    if (progressionStepIndex >= prog.chords.length) return; // 完了後は何もしない
+    if (progressionAdvancing) return; // OK演出中は一時停止
+
+    if (rms < chordNoiseFloor * CHORD_SIGNAL_MARGIN) {
+      chordNoiseFloor = chordNoiseFloor * (1 - NOISE_FLOOR_ADAPT_RATE) + rms * NOISE_FLOOR_ADAPT_RATE;
+      progressionStableStreak = 0;
+      return;
+    }
+    const freqDataDb = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(freqDataDb);
+    const rawChroma = computeChroma(freqDataDb, audioCtx.sampleRate, analyser.fftSize);
+    const chroma = stabilizeChroma(rawChroma);
+    const best = matchChord(chroma)[0];
+    const target = prog.chords[progressionStepIndex];
+    const targetName = progressionChordName(target);
+
+    if (best && best.name === targetName && best.score > PROGRESSION_SCORE_THRESHOLD) {
+      progressionStableStreak++;
+      if (progressionStableStreak >= PROGRESSION_STABLE_FRAMES_REQUIRED) {
+        handleProgressionSuccess();
+      } else {
+        progressionHintEl.textContent = `このコードを鳴らしてください… ${Math.round(progressionStableStreak / PROGRESSION_STABLE_FRAMES_REQUIRED * 100)}%`;
+      }
+    } else {
+      progressionStableStreak = 0;
+      progressionHintEl.textContent = 'このコードを鳴らしてください';
+    }
   }
 }
 
@@ -1054,6 +1216,7 @@ buildChromaBars();
 buildChartQualityTabs();
 buildChartRoots();
 renderChordChart();
+resetProgression();
 </script>
 
 </body>
