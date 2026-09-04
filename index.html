@@ -66,7 +66,15 @@
   }
   .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
   .quality-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
-  .progression-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 16px; }
+  .progression-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
+  .random-progression-btn {
+    display: block; width: 100%; margin-bottom: 16px;
+    padding: 10px; font-size: 13px; font-weight: 500;
+    border-radius: 10px; border: 1px dashed var(--accent);
+    background: transparent; color: var(--accent); cursor: pointer;
+  }
+  .random-progression-btn.active { background: rgba(78,139,240,0.14); }
+  .progression-title { font-size: 12px; color: var(--text-dim); margin: 0 0 6px; min-height: 15px; }
   .tab {
     flex: 1;
     padding: 10px;
@@ -292,7 +300,9 @@
   <!-- ===== コード進行セクション ===== -->
   <div id="section-progression" class="hidden">
     <div class="progression-grid" id="progression-select"></div>
+    <button class="random-progression-btn" id="progression-random-btn">🎲 ランダムなコード進行を生成</button>
     <div class="panel">
+      <p class="progression-title" id="progression-title">&nbsp;</p>
       <p class="hint" id="progression-hint">開始ボタンを押してマイクを許可してください</p>
       <div class="chord-chart-name" id="progression-chord-name">C</div>
       <div class="chord-diagram" id="progression-diagram"></div>
@@ -442,7 +452,8 @@ let currentSection = 'tuner';
 let chartRoot = 0;
 let chartQuality = 'major';
 let chartVoicingIndex = 0;
-let progressionSetIndex = 0;
+let progressionSetIndex = 0; // 数値ならPROGRESSIONSのindex、'random'ならrandomProgressionを使う
+let randomProgression = null;
 let progressionStepIndex = 0;
 let progressionCompletedSteps = [];
 let progressionStableStreak = 0;
@@ -471,6 +482,44 @@ const PROGRESSIONS = [
     { root: 5, quality: 'major' }, { root: 7, quality: 'major' },
   ]},
 ];
+
+// ================= ランダムなコード進行の生成(Cメジャーキーのダイアトニックコードのみを使用) =================
+// 実際の楽曲でよく見られる進行(例: I→V→vi→IV、ii→V→I など)を優先するよう重み付けした
+// マルコフ連鎖でランダムウォークすることで、「あり得るコード進行」に絞って生成する
+const DIATONIC_CHORDS = {
+  I:   { root: 0, quality: 'major' }, // C
+  ii:  { root: 2, quality: 'minor' }, // Dm
+  iii: { root: 4, quality: 'minor' }, // Em
+  IV:  { root: 5, quality: 'major' }, // F
+  V:   { root: 7, quality: 'major' }, // G
+  vi:  { root: 9, quality: 'minor' }, // Am
+};
+const PROGRESSION_TRANSITIONS = {
+  I:   { IV: 3, V: 3, vi: 2, ii: 2, iii: 1 },
+  ii:  { V: 4, IV: 2, vi: 1 },
+  iii: { vi: 3, IV: 2, ii: 1 },
+  IV:  { V: 4, I: 3, ii: 2, vi: 1 },
+  V:   { I: 5, vi: 2, IV: 1 },
+  vi:  { IV: 3, ii: 2, V: 2, I: 1 },
+};
+function weightedPick(weights) {
+  const entries = Object.entries(weights);
+  const total = entries.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [key, w] of entries) {
+    if (r < w) return key;
+    r -= w;
+  }
+  return entries[entries.length - 1][0];
+}
+function generateRandomProgression(length = 4) {
+  const romanSeq = ['I'];
+  while (romanSeq.length < length) {
+    const last = romanSeq[romanSeq.length - 1];
+    romanSeq.push(weightedPick(PROGRESSION_TRANSITIONS[last]));
+  }
+  return { name: `🎲 ランダム進行 (${romanSeq.join('-')})`, chords: romanSeq.map(r => DIATONIC_CHORDS[r]) };
+}
 let currentModeKey = 'guitar';
 let selectedString = MODES.guitar.strings[0].name;
 let audioCtx = null;
@@ -511,6 +560,8 @@ const chordDiagramEl = document.getElementById('chord-diagram');
 const chartVoicingTabsEl = document.getElementById('chart-voicing-tabs');
 const sectionProgressionEl = document.getElementById('section-progression');
 const progressionSelectEl = document.getElementById('progression-select');
+const progressionRandomBtn = document.getElementById('progression-random-btn');
+const progressionTitleEl = document.getElementById('progression-title');
 const progressionHintEl = document.getElementById('progression-hint');
 const progressionChordNameEl = document.getElementById('progression-chord-name');
 const progressionDiagramEl = document.getElementById('progression-diagram');
@@ -835,7 +886,9 @@ function renderChordChart() {
 }
 
 // ================= コード進行UI =================
-function currentProgression() { return PROGRESSIONS[progressionSetIndex]; }
+function currentProgression() {
+  return progressionSetIndex === 'random' ? randomProgression : PROGRESSIONS[progressionSetIndex];
+}
 function buildProgressionSelect() {
   progressionSelectEl.innerHTML = '';
   PROGRESSIONS.forEach((p, i) => {
@@ -845,7 +898,13 @@ function buildProgressionSelect() {
     btn.onclick = () => { progressionSetIndex = i; resetProgression(); };
     progressionSelectEl.appendChild(btn);
   });
+  progressionRandomBtn.className = 'random-progression-btn' + (progressionSetIndex === 'random' ? ' active' : '');
 }
+progressionRandomBtn.onclick = () => {
+  randomProgression = generateRandomProgression();
+  progressionSetIndex = 'random';
+  resetProgression();
+};
 function progressionChordName(step) { return NOTE_NAMES[step.root] + QUALITY_DEFS[step.quality].suffix; }
 function buildProgressionSteps() {
   const prog = currentProgression();
@@ -876,6 +935,7 @@ function resetProgression() {
   progressionAdvancing = false;
   chromaHistory.length = 0;
   progressionRestartBtn.classList.add('hidden');
+  progressionTitleEl.textContent = currentProgression().name;
   buildProgressionSelect();
   buildProgressionSteps();
   renderProgressionChord();
