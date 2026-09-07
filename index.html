@@ -1052,8 +1052,9 @@ const YIN_FALLBACK_THRESHOLD = 0.5; // 明確な谷が無い場合、この値�
 function autocorrelate(buffer, sampleRate, range) {
   const minLag = Math.floor(sampleRate / range.max);
   const maxLag = Math.floor(sampleRate / range.min);
-  // 差分関数の計算には 2*maxLag サンプルあれば十分(全バッファを使うより大幅に軽い)
-  const W = Math.min(buffer.length, maxLag * 2);
+  // 解析窓はバッファ全体を使う(短くすると処理は軽くなるが、フレームごとの推定が
+  // ノイズに敏感になり実演奏でピッチが安定しにくくなるため、精度を優先する)
+  const W = buffer.length;
   if (maxLag <= minLag || W <= maxLag) return null;
 
   // ステップ1: 差分関数 d(tau) = Σ (x[j] - x[j+tau])^2
