@@ -1044,19 +1044,66 @@ function getRMS(buffer) {
   for (let i = 0; i < buffer.length; i++) sum += buffer[i] * buffer[i];
   return Math.sqrt(sum / buffer.length);
 }
+// YINアルゴリズムによるピッチ検出。単純な自己相関よりオクターブ誤検出(1オクターブ違いを
+// 誤って検出してしまう現象)が起きにくく、放物線補間でサブサンプル精度も出せる。
+// 参考: de Cheveigné & Kawahara, "YIN, a fundamental frequency estimator for speech and music" (2002)
+const YIN_THRESHOLD = 0.15; // これを下回る谷を「周期性が十分ある」とみなす(小さいほど厳密)
+const YIN_FALLBACK_THRESHOLD = 0.5; // 明確な谷が無い場合、この値以下ならフォールバックとして採用する
 function autocorrelate(buffer, sampleRate, range) {
-  const SIZE = buffer.length;
   const minLag = Math.floor(sampleRate / range.max);
   const maxLag = Math.floor(sampleRate / range.min);
-  let bestLag = -1, bestCorrelation = 0;
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let correlation = 0;
-    for (let i = 0; i < SIZE - lag; i++) correlation += buffer[i] * buffer[i + lag];
-    correlation = correlation / (SIZE - lag);
-    if (correlation > bestCorrelation) { bestCorrelation = correlation; bestLag = lag; }
+  // 差分関数の計算には 2*maxLag サンプルあれば十分(全バッファを使うより大幅に軽い)
+  const W = Math.min(buffer.length, maxLag * 2);
+  if (maxLag <= minLag || W <= maxLag) return null;
+
+  // ステップ1: 差分関数 d(tau) = Σ (x[j] - x[j+tau])^2
+  const diff = new Float32Array(maxLag + 1);
+  for (let tau = 1; tau <= maxLag; tau++) {
+    let sum = 0;
+    for (let j = 0; j < W - tau; j++) {
+      const delta = buffer[j] - buffer[j + tau];
+      sum += delta * delta;
+    }
+    diff[tau] = sum;
   }
-  if (bestLag === -1) return null;
-  return sampleRate / bestLag;
+
+  // ステップ2: 累積平均正規化差分関数(CMNDF)。d(0)相当は常に1として扱う
+  const cmndf = new Float32Array(maxLag + 1);
+  cmndf[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau <= maxLag; tau++) {
+    runningSum += diff[tau];
+    cmndf[tau] = runningSum === 0 ? 1 : diff[tau] * tau / runningSum;
+  }
+
+  // ステップ3: 探索範囲(調べたい周波数レンジ)の中で、しきい値を最初に下回る谷を周期として採用
+  let tauEstimate = -1;
+  for (let tau = minLag; tau <= maxLag; tau++) {
+    if (cmndf[tau] < YIN_THRESHOLD) {
+      while (tau + 1 <= maxLag && cmndf[tau + 1] < cmndf[tau]) tau++;
+      tauEstimate = tau;
+      break;
+    }
+  }
+  // しきい値を下回る谷が無い場合、範囲内の最小値をフォールバックとして使う(緩い基準で採用)
+  if (tauEstimate === -1) {
+    let minVal = Infinity, minTau = -1;
+    for (let tau = minLag; tau <= maxLag; tau++) {
+      if (cmndf[tau] < minVal) { minVal = cmndf[tau]; minTau = tau; }
+    }
+    if (minVal < YIN_FALLBACK_THRESHOLD) tauEstimate = minTau;
+  }
+  if (tauEstimate === -1) return null; // 明確な周期性が見つからない(無音・非調性音など)
+
+  // ステップ4: 放物線補間でサブサンプル精度の周期を求める
+  let betterTau = tauEstimate;
+  if (tauEstimate > minLag && tauEstimate < maxLag) {
+    const s0 = cmndf[tauEstimate - 1], s1 = cmndf[tauEstimate], s2 = cmndf[tauEstimate + 1];
+    const denom = s0 - 2 * s1 + s2;
+    if (denom !== 0) betterTau = tauEstimate + 0.5 * (s0 - s2) / denom;
+  }
+
+  return sampleRate / betterTau;
 }
 function stabilize(freq) {
   freqHistory.push(freq);
