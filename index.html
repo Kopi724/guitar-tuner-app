@@ -332,16 +332,17 @@ const MODES = {
       { name: 'E2', freq: 82.41 }, { name: 'A2', freq: 110.00 }, { name: 'D3', freq: 146.83 },
       { name: 'G3', freq: 196.00 }, { name: 'B3', freq: 246.94 }, { name: 'E4', freq: 329.63 },
     ],
-    range: { min: 70, max: 400 }
+    range: { min: 70, max: 400 }, minRMS: 0.01
   },
   bass: {
     label: 'ベース',
     strings: [
       { name: 'E1', freq: 41.20 }, { name: 'A1', freq: 55.00 }, { name: 'D2', freq: 73.42 }, { name: 'G2', freq: 98.00 },
     ],
-    range: { min: 35, max: 250 }
+    // ベースは低音域でマイク感度が落ちやすく、音量も小さくなりがちなためしきい値を下げる
+    range: { min: 35, max: 250 }, minRMS: 0.004
   },
-  free: { label: '自由', strings: null, range: { min: 60, max: 1000 } }
+  free: { label: '自由', strings: null, range: { min: 60, max: 1000 }, minRMS: 0.008 }
 };
 
 const NOTE_NAMES = ['C','C\u266f','D','D\u266f','E','F','F\u266f','G','G\u266f','A','A\u266f','B'];
@@ -534,6 +535,7 @@ let currentModeKey = 'guitar';
 let selectedString = MODES.guitar.strings[0].name;
 let audioCtx = null;
 let analyser = null;
+let gainNode = null;
 let mediaStream = null;
 let listening = false;
 let rafId = null;
@@ -985,17 +987,25 @@ progressionRestartBtn.onclick = () => resetProgression();
 // ================= マイク制御 =================
 async function startListening() {
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // echoCancellation/noiseSuppression/autoGainControl\u306f\u901a\u8a71\u5411\u3051\u306e\u51e6\u7406\u3067\u3001
+    // \u30d9\u30fc\u30b9\u306e\u4f4e\u97f3\u57df\u306a\u3069\u6301\u7d9a\u3059\u308b\u4f4e\u3044\u97f3\u3092\u300c\u30ce\u30a4\u30ba\u300d\u3068\u3057\u3066\u6e1b\u8870\u3055\u305b\u3066\u3057\u307e\u3046\u3053\u3068\u304c\u3042\u308b\u305f\u3081\u7121\u52b9\u5316\u3059\u308b
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
   } catch (err) {
     statusEl.textContent = '\u30de\u30a4\u30af\u3078\u306e\u30a2\u30af\u30bb\u30b9\u304c\u62d2\u5426\u3055\u308c\u307e\u3057\u305f';
     return;
   }
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(mediaStream);
+  // \u751f\u97f3(\u7279\u306b\u30d9\u30fc\u30b9\u306e\u4f4e\u97f3)\u306f\u30de\u30a4\u30af\u5165\u529b\u304c\u5c0f\u3055\u3044\u3053\u3068\u304c\u591a\u3044\u305f\u3081\u3001\u30c7\u30b8\u30bf\u30eb\u30b2\u30a4\u30f3\u3067\u5e95\u4e0a\u3052\u3059\u308b
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = 4;
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 8192;
   analyser.smoothingTimeConstant = 0.6;
-  source.connect(analyser);
+  source.connect(gainNode);
+  gainNode.connect(analyser);
 
   listening = true;
   startBtn.textContent = '\u505c\u6b62';
@@ -1011,7 +1021,7 @@ function stopListening() {
   if (rafId) cancelAnimationFrame(rafId);
   if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
   if (audioCtx) audioCtx.close();
-  audioCtx = null; analyser = null; mediaStream = null;
+  audioCtx = null; analyser = null; gainNode = null; mediaStream = null;
   startBtn.textContent = '\u30de\u30a4\u30af\u3092\u958b\u59cb';
   startBtn.classList.remove('listening');
   if (!guidedMode) hint.textContent = '\u958b\u59cb\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30de\u30a4\u30af\u3092\u8a31\u53ef\u3057\u3066\u304f\u3060\u3055\u3044';
@@ -1187,7 +1197,7 @@ function loop(timestamp) {
     if (guidedMode && mode.strings && guidedIndex >= mode.strings.length) return; // 完了後は何もしない
     if (advancing) return; // OK演出中は一時停止
 
-    if (rms < 0.01) {
+    if (rms < mode.minRMS) {
       noteDisplay.textContent = '\u2014'; readout.textContent = '\u00a0'; setMeter(0, 'neutral');
       if (guidedMode) stableStreak = 0;
       return;
